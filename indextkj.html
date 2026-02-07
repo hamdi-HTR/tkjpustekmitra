@@ -1,0 +1,763 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged, 
+  signInWithCustomToken,
+  signInAnonymously
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  doc, 
+  setDoc, 
+  onSnapshot 
+} from 'firebase/firestore';
+import { 
+  Server, Network, ShieldCheck, Globe, X, Mail, Phone, 
+  Settings, Instagram, MapPin, Trash2, LogOut, Home,
+  ChevronRight, Lock, Loader2, Plus, MessageCircle, ExternalLink,
+  Monitor, Image as ImageIcon, Upload, Camera, AlertCircle, Newspaper,
+  Calendar, Info, Maximize2, FileImage, Cpu, Layout, Layers, Radio,
+  ArrowLeft, BookOpen, CheckCircle2
+} from 'lucide-react';
+
+// --- FIREBASE CONFIGURATION ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'tkj-pustek-mitra';
+
+// --- OFFICIAL ADMIN CREDENTIALS ---
+const ADMIN_CREDENTIALS = {
+  'tkjpustekmitra@gmail.com': 'pustek99',
+  'hamdikaryanto@gmail.com': 'pustek99'
+};
+
+const ALLOWED_ADMINS = Object.keys(ADMIN_CREDENTIALS);
+
+// --- DEFAULT DATA ---
+const INITIAL_CURRICULUM = [
+  { id: 1, title: "Infrastructure", iconType: "Network", desc: "Instalasi dan maintenance jaringan kabel maupun nirkabel.", longDesc: "Fokus pada pembangunan fondasi jaringan yang kuat menggunakan teknologi Fiber Optic, Cisco, dan Mikrotik." },
+  { id: 2, title: "Cyber Security", iconType: "ShieldCheck", desc: "Proteksi data dan sistem dari berbagai ancaman digital.", longDesc: "Mempelajari teknik pertahanan jaringan, audit keamanan, dan penanganan insiden siber secara profesional." },
+  { id: 3, title: "Cloud Tech", iconType: "Globe", desc: "Implementasi server virtual dan teknologi penyimpanan awan.", longDesc: "Eksplorasi teknologi virtualisasi dan manajemen resource cloud untuk skalabilitas infrastruktur modern." },
+  { id: 4, title: "System Admin", iconType: "Server", desc: "Manajemen sistem operasi server Windows dan Linux.", longDesc: "Penguasaan administrasi server tingkat lanjut untuk mendukung layanan enterprise dan database." }
+];
+
+const INITIAL_GALLERY = [
+  { id: 1, title: "Praktik Fiber Optic", date: "Jan 2024", url: "https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&q=80", size: "large" },
+  { id: 2, title: "Server Room", date: "Feb 2024", url: "https://images.unsplash.com/photo-1558494949-ef010cbdcc48?auto=format&fit=crop&q=80", size: "tall" },
+  { id: 3, title: "Kunjungan Industri", date: "Mar 2024", url: "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&q=80", size: "wide" }
+];
+
+const INITIAL_NEWS = [
+  { 
+    id: 1, 
+    title: "Pendaftaran Siswa Baru Angkatan 2024/2025", 
+    desc: "Telah dibuka pendaftaran siswa baru untuk kompetensi keahlian TKJ. Segera daftar sebelum kuota terpenuhi.", 
+    date: "10 Mei 2024",
+    url: "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&q=80"
+  }
+];
+
+const DEFAULT_LOGO = "https://img.icons8.com/fluency/96/network.png";
+
+// --- UTILITY FUNCTIONS ---
+const fileToBase64 = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = error => reject(error);
+  });
+};
+
+const IconPicker = ({ selected, onSelect }) => {
+  const icons = [
+    { name: 'Network', icon: <Network size={16}/> },
+    { name: 'ShieldCheck', icon: <ShieldCheck size={16}/> },
+    { name: 'Globe', icon: <Globe size={16}/> },
+    { name: 'Server', icon: <Server size={16}/> },
+    { name: 'Cpu', icon: <Cpu size={16}/> },
+    { name: 'Layout', icon: <Layout size={16}/> },
+    { name: 'Layers', icon: <Layers size={16}/> },
+    { name: 'Radio', icon: <Radio size={16}/> }
+  ];
+
+  return (
+    <div className="grid grid-cols-4 gap-2">
+      {icons.map(i => (
+        <button 
+          key={i.name} 
+          onClick={() => onSelect(i.name)}
+          className={`p-3 rounded-xl flex items-center justify-center border transition-all ${selected === i.name ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-white text-slate-400 border-slate-100 hover:border-blue-200'}`}
+        >
+          {i.icon}
+        </button>
+      ))}
+    </div>
+  );
+};
+
+const RenderIcon = ({ type, size = 24 }) => {
+  switch(type) {
+    case 'Network': return <Network size={size} />;
+    case 'ShieldCheck': return <ShieldCheck size={size} />;
+    case 'Globe': return <Globe size={size} />;
+    case 'Server': return <Server size={size} />;
+    case 'Cpu': return <Cpu size={size} />;
+    case 'Layout': return <Layout size={size} />;
+    case 'Layers': return <Layers size={size} />;
+    case 'Radio': return <Radio size={size} />;
+    default: return <Cpu size={size} />;
+  }
+};
+
+// --- COMPONENTS ---
+
+const DynamicLogo = ({ url, className = "w-12 h-12" }) => {
+  const [error, setError] = useState(false);
+  useEffect(() => { setError(false); }, [url]);
+
+  return (
+    <div className={`${className} flex items-center justify-center overflow-hidden bg-white shrink-0 rounded-xl shadow-sm border`}>
+      {url && url.trim() !== "" && !error ? (
+        <img src={url} alt="Logo" className="w-full h-full object-contain p-1" onError={() => setError(true)} />
+      ) : (
+        <div className="bg-blue-600 text-white flex items-center justify-center w-full h-full"><Monitor size={24} /></div>
+      )}
+    </div>
+  );
+};
+
+const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  if (!isOpen) return null;
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    const localPass = ADMIN_CREDENTIALS[email];
+    if (!localPass || localPass !== password) {
+      setError('Akses ditolak. Email atau password salah.');
+      setLoading(false);
+      return;
+    }
+    try {
+      let user;
+      try {
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        user = userCredential.user;
+      } catch (fbErr) {
+        user = { email, uid: 'local-admin-' + email, isAnonymous: false };
+      }
+      onAuthSuccess(user);
+      onClose();
+    } catch (err) {
+      setError('Gagal masuk: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[999] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-md">
+      <div className="bg-white w-full max-w-md rounded-[3rem] p-10 shadow-2xl border border-slate-100 animate-in fade-in zoom-in duration-300">
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h2 className="text-2xl font-black tracking-tight text-slate-900">Admin Area</h2>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">SMKS Pustek Mitra</p>
+          </div>
+          <button onClick={onClose} className="p-3 hover:bg-slate-100 rounded-full transition-colors"><X size={20}/></button>
+        </div>
+        <form onSubmit={handleLogin} className="space-y-5">
+          <input type="email" placeholder="Email Administrator" className="w-full p-4 rounded-2xl border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500 font-medium" value={email} onChange={e => setEmail(e.target.value)} required />
+          <input type="password" placeholder="Kata Sandi" className="w-full p-4 rounded-2xl border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500 font-medium" value={password} onChange={e => setPassword(e.target.value)} required />
+          <button disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl uppercase tracking-widest text-xs shadow-lg shadow-blue-600/20">
+            {loading ? <Loader2 className="animate-spin mx-auto" size={18} /> : 'Masuk Panel Kontrol'}
+          </button>
+          {error && <p className="text-red-500 text-xs font-bold text-center">{error}</p>}
+        </form>
+      </div>
+    </div>
+  );
+};
+
+const AdminPanel = ({ isOpen, onClose, config, setConfig, user }) => {
+  const [activeTab, setActiveTab] = useState('logo');
+  const [isSaving, setIsSaving] = useState(false);
+  const [statusMsg, setStatusMsg] = useState({ text: '', type: 'success' });
+  
+  const [logoPreview, setLogoPreview] = useState(config.logoUrl || '');
+  const [newGallery, setNewGallery] = useState({ title: '', url: '', size: 'medium' });
+  const [newNews, setNewNews] = useState({ title: '', url: '', desc: '' });
+  const [newSkill, setNewSkill] = useState({ title: '', iconType: 'Network', desc: '', longDesc: '' });
+  const [editingSkill, setEditingSkill] = useState(null);
+
+  const fileInputRef = useRef(null);
+  const galleryInputRef = useRef(null);
+  const newsInputRef = useRef(null);
+
+  useEffect(() => { if (isOpen) setLogoPreview(config.logoUrl || ''); }, [isOpen, config.logoUrl]);
+
+  if (!isOpen) return null;
+
+  const saveToFirebase = async (updatedConfig) => {
+    setIsSaving(true);
+    try {
+      if (user && !user.uid.startsWith('local-admin')) {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', 'main'), updatedConfig);
+      }
+      setConfig(updatedConfig);
+      setStatusMsg({ text: 'Data berhasil diperbarui!', type: 'success' });
+      setTimeout(() => setStatusMsg({ text: '', type: 'success' }), 3000);
+    } catch (e) {
+      setStatusMsg({ text: 'Gagal menyimpan data.', type: 'error' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleFileUpload = async (e, target) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 800000) {
+      setStatusMsg({ text: 'File terlalu besar (Maks 800KB)', type: 'error' });
+      return;
+    }
+    try {
+      const base64 = await fileToBase64(file);
+      if (target === 'logo') setLogoPreview(base64);
+      else if (target === 'gallery') setNewGallery({ ...newGallery, url: base64 });
+      else if (target === 'news') setNewNews({ ...newNews, url: base64 });
+    } catch (err) {
+      setStatusMsg({ text: 'Gagal memproses gambar', type: 'error' });
+    }
+  };
+
+  const handleUpdateLogo = () => saveToFirebase({ ...config, logoUrl: logoPreview });
+
+  const handleAddGallery = () => {
+    const photoDate = new Date().toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+    const updated = { ...config, gallery: [{ ...newGallery, id: Date.now(), date: photoDate }, ...(config.gallery || [])] };
+    saveToFirebase(updated);
+    setNewGallery({ title: '', url: '', size: 'medium' });
+  };
+
+  const handleAddNews = () => {
+    const newsDate = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    const updated = { ...config, news: [{ ...newNews, id: Date.now(), date: newsDate }, ...(config.news || [])] };
+    saveToFirebase(updated);
+    setNewNews({ title: '', url: '', desc: '' });
+  };
+
+  const handleAddOrUpdateSkill = () => {
+    let updatedCurriculum;
+    if (editingSkill) {
+      updatedCurriculum = config.curriculum.map(s => s.id === editingSkill.id ? { ...newSkill, id: s.id } : s);
+    } else {
+      updatedCurriculum = [...(config.curriculum || []), { ...newSkill, id: Date.now() }];
+    }
+    saveToFirebase({ ...config, curriculum: updatedCurriculum });
+    setNewSkill({ title: '', iconType: 'Network', desc: '', longDesc: '' });
+    setEditingSkill(null);
+  };
+
+  const removeItem = (type, id) => {
+    const updated = { ...config, [type]: (config[type] || []).filter(item => item.id !== id) };
+    saveToFirebase(updated);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[1000] flex justify-end">
+      <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" onClick={onClose}></div>
+      <div className="relative bg-white w-full max-w-xl h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-500">
+        <div className="p-8 border-b flex justify-between items-center bg-white sticky top-0 z-10">
+          <h2 className="text-2xl font-black tracking-tight flex items-center gap-3 text-slate-900">
+            <Settings className="text-blue-600" /> Admin Panel
+          </h2>
+          <button onClick={onClose} className="p-3 hover:bg-slate-100 rounded-full transition-colors"><X/></button>
+        </div>
+
+        <div className="flex border-b overflow-x-auto no-scrollbar">
+          {['logo', 'gallery', 'news', 'curriculum'].map(tab => (
+            <button 
+              key={tab}
+              onClick={() => setActiveTab(tab)} 
+              className={`flex-none px-6 py-4 text-[10px] font-black uppercase tracking-widest ${activeTab === tab ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400'}`}
+            >
+              {tab === 'logo' ? 'Logo' : tab === 'gallery' ? 'Galeri' : tab === 'news' ? 'Informasi' : 'Keahlian'}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-8 space-y-8 pb-20">
+          {statusMsg.text && (
+            <div className={`p-4 border rounded-2xl text-xs font-bold flex items-center gap-2 animate-bounce ${statusMsg.type === 'success' ? 'bg-green-50 border-green-100 text-green-700' : 'bg-red-50 border-red-100 text-red-700'}`}>
+              <Info size={14}/> {statusMsg.text}
+            </div>
+          )}
+
+          {activeTab === 'logo' && (
+            <div className="space-y-6">
+              <div className="flex flex-col items-center gap-6 p-10 bg-slate-50 rounded-[3rem] border border-slate-100">
+                <div className="w-40 h-40 bg-white rounded-[2.5rem] shadow-xl border-4 border-white flex items-center justify-center overflow-hidden">
+                  <img src={logoPreview} className="w-full h-full object-contain p-2" alt="Logo Preview" />
+                </div>
+                <div className="w-full space-y-3">
+                  <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={(e) => handleFileUpload(e, 'logo')} />
+                  <button onClick={() => fileInputRef.current.click()} className="w-full py-4 bg-white border-2 border-dashed border-slate-200 text-slate-600 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 hover:border-blue-400 hover:text-blue-600 transition-all">
+                    <Upload size={16}/> Upload Logo
+                  </button>
+                  <button onClick={handleUpdateLogo} disabled={isSaving} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-slate-900/20">
+                    Simpan Logo
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'curriculum' && (
+            <div className="space-y-6">
+              <div className="p-8 bg-blue-50/50 rounded-[3rem] border border-blue-100 space-y-4">
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-blue-600">
+                  {editingSkill ? 'Edit Detail Keahlian' : 'Tambah Kartu Keahlian'}
+                </h4>
+                <div className="space-y-2">
+                  <p className="text-[10px] font-black uppercase text-slate-400">Pilih Ikon:</p>
+                  <IconPicker selected={newSkill.iconType} onSelect={(val) => setNewSkill({...newSkill, iconType: val})} />
+                </div>
+                <input className="w-full p-4 border bg-white rounded-2xl outline-none text-sm font-medium" placeholder="Judul Keahlian" value={newSkill.title} onChange={e => setNewSkill({...newSkill, title: e.target.value})} />
+                <textarea className="w-full p-4 border bg-white rounded-2xl outline-none text-sm font-medium" placeholder="Deskripsi Singkat (Tampil di Kartu)" value={newSkill.desc} onChange={e => setNewSkill({...newSkill, desc: e.target.value})} />
+                <div className="space-y-1">
+                   <p className="text-[10px] font-black uppercase text-slate-400 px-1">Isi Sub-Halaman (Detail Lengkap):</p>
+                   <textarea className="w-full p-4 border bg-white rounded-2xl outline-none min-h-[150px] text-sm font-medium" placeholder="Tuliskan materi atau penjelasan lengkap di sini..." value={newSkill.longDesc} onChange={e => setNewSkill({...newSkill, longDesc: e.target.value})} />
+                </div>
+                <div className="flex gap-2">
+                   <button onClick={handleAddOrUpdateSkill} disabled={!newSkill.title || !newSkill.desc} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest">
+                     {editingSkill ? 'Update Data' : 'Tambah Keahlian'}
+                   </button>
+                   {editingSkill && (
+                     <button onClick={() => { setEditingSkill(null); setNewSkill({ title: '', iconType: 'Network', desc: '', longDesc: '' }); }} className="px-6 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-[10px] tracking-widest">Batal</button>
+                   )}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {(config.curriculum || INITIAL_CURRICULUM).map(item => (
+                  <div key={item.id} className="p-5 bg-white border rounded-[2rem] flex items-center gap-4 group">
+                    <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0">
+                      <RenderIcon type={item.iconType} size={20} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h5 className="font-black text-sm text-slate-900">{item.title}</h5>
+                    </div>
+                    <div className="flex gap-2">
+                       <button onClick={() => { setEditingSkill(item); setNewSkill(item); }} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl"><Settings size={18}/></button>
+                       <button onClick={() => removeItem('curriculum', item.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={18}/></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'gallery' && (
+            <div className="space-y-6">
+              <div className="p-8 bg-blue-50/50 rounded-[3rem] border border-blue-100 space-y-4">
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-blue-600">Tambah Foto Galeri</h4>
+                {newGallery.url && <img src={newGallery.url} className="w-full h-40 object-cover rounded-2xl border" />}
+                <input type="file" accept="image/*" className="hidden" ref={galleryInputRef} onChange={(e) => handleFileUpload(e, 'gallery')} />
+                <button onClick={() => galleryInputRef.current.click()} className="w-full py-3 bg-white border border-blue-200 text-blue-600 rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2">
+                  <FileImage size={16}/> {newGallery.url ? 'Ganti Foto' : 'Pilih dari Laptop'}
+                </button>
+                <input className="w-full p-4 border bg-white rounded-2xl outline-none text-sm font-medium" placeholder="Judul Foto" value={newGallery.title} onChange={e => setNewGallery({...newGallery, title: e.target.value})} />
+                <div className="grid grid-cols-4 gap-2">
+                  {['small', 'medium', 'large', 'tall'].map(sz => (
+                    <button key={sz} onClick={() => setNewGallery({...newGallery, size: sz})} className={`py-2 rounded-xl text-[8px] font-black uppercase tracking-tighter border transition-all ${newGallery.size === sz ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white text-slate-400'}`}>
+                      {sz}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={handleAddGallery} disabled={!newGallery.title || !newGallery.url} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest">Post Galeri</button>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                {(config.gallery || INITIAL_GALLERY).map(item => (
+                  <div key={item.id} className="relative aspect-square rounded-2xl overflow-hidden group border bg-slate-50">
+                    <img src={item.url} className="w-full h-full object-cover" />
+                    <button onClick={() => removeItem('gallery', item.id)} className="absolute top-2 right-2 p-2 bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={16}/></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'news' && (
+            <div className="space-y-6">
+              <div className="p-8 bg-indigo-50/50 rounded-[3rem] border border-indigo-100 space-y-4">
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Post Informasi Baru</h4>
+                {newNews.url && <img src={newNews.url} className="w-full h-40 object-cover rounded-2xl border" />}
+                <input type="file" accept="image/*" className="hidden" ref={newsInputRef} onChange={(e) => handleFileUpload(e, 'news')} />
+                <button onClick={() => newsInputRef.current.click()} className="w-full py-3 bg-white border border-indigo-200 text-indigo-600 rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2">
+                  <ImageIcon size={16}/> {newNews.url ? 'Ganti Banner' : 'Upload Banner'}
+                </button>
+                <input className="w-full p-4 border bg-white rounded-2xl outline-none text-sm font-medium" placeholder="Judul Berita" value={newNews.title} onChange={e => setNewNews({...newNews, title: e.target.value})} />
+                <textarea className="w-full p-4 border bg-white rounded-2xl outline-none min-h-[120px] text-sm font-medium" placeholder="Deskripsi..." value={newNews.desc} onChange={e => setNewNews({...newNews, desc: e.target.value})} />
+                <button onClick={handleAddNews} disabled={!newNews.title || !newNews.url || !newNews.desc} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest">Terbitkan</button>
+              </div>
+              <div className="space-y-4">
+                {(config.news || INITIAL_NEWS).map(item => (
+                  <div key={item.id} className="p-4 bg-white border rounded-[2rem] flex gap-4 group">
+                    <img src={item.url} className="w-20 h-20 rounded-2xl object-cover bg-slate-50" />
+                    <div className="flex-1 min-w-0">
+                      <h5 className="font-black text-sm text-slate-900 truncate">{item.title}</h5>
+                      <p className="text-[10px] text-slate-400 mt-1">{item.date}</p>
+                    </div>
+                    <button onClick={() => removeItem('news', item.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl self-center"><Trash2 size={20}/></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="p-8 border-t bg-slate-50 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+            <span className="text-[10px] font-black uppercase text-slate-400">Admin Mode</span>
+          </div>
+          <button onClick={() => { signOut(auth); window.location.reload(); }} className="px-4 py-2 border-2 border-red-200 text-red-600 rounded-xl font-black uppercase text-[8px] tracking-widest hover:bg-red-600 hover:text-white transition-all">Keluar</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- VIEW COMPONENTS ---
+const SkillDetail = ({ skill, onBack }) => (
+  <div className="min-h-screen bg-white pt-32 pb-24 animate-in fade-in duration-500">
+    <div className="max-w-4xl mx-auto px-6">
+      <button onClick={onBack} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-blue-600 mb-12 transition-colors">
+        <ArrowLeft size={16} /> Kembali
+      </button>
+      
+      <div className="flex items-center gap-6 mb-12">
+        <div className="w-24 h-24 bg-blue-600 text-white rounded-[2rem] flex items-center justify-center shadow-2xl shadow-blue-600/20">
+          <RenderIcon type={skill.iconType} size={40} />
+        </div>
+        <div>
+          <h1 className="text-4xl md:text-6xl font-black text-slate-900 tracking-tighter">{skill.title}</h1>
+          <p className="text-blue-600 font-black uppercase text-[10px] tracking-[0.4em] mt-2">Kompetensi Inti TKJ</p>
+        </div>
+      </div>
+
+      <div className="prose prose-slate max-w-none">
+        <div className="p-8 md:p-12 bg-slate-50 rounded-[3rem] border border-slate-100 mb-10">
+          <h3 className="text-xl font-black text-slate-900 mb-6 flex items-center gap-3">
+             <BookOpen className="text-blue-600" size={24} /> Tentang Keahlian Ini
+          </h3>
+          <p className="text-slate-600 text-lg leading-relaxed whitespace-pre-wrap font-medium">
+            {skill.longDesc || skill.desc || "Belum ada deskripsi detail untuk keahlian ini."}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+           <div className="p-8 bg-white border border-slate-100 rounded-[2.5rem] shadow-sm">
+              <h4 className="text-sm font-black uppercase tracking-widest text-slate-900 mb-4">Target Pembelajaran</h4>
+              <ul className="space-y-3">
+                 {["Teori Dasar", "Praktik Industri", "Sertifikasi Kompetensi"].map((t, i) => (
+                   <li key={i} className="flex items-center gap-2 text-sm text-slate-500 font-medium">
+                     <CheckCircle2 size={16} className="text-blue-500" /> {t}
+                   </li>
+                 ))}
+              </ul>
+           </div>
+           <div className="p-8 bg-white border border-slate-100 rounded-[2.5rem] shadow-sm">
+              <h4 className="text-sm font-black uppercase tracking-widest text-slate-900 mb-4">Peluang Karir</h4>
+              <ul className="space-y-3">
+                 {["Network Engineer", "IT Specialist", "Technopreneur"].map((t, i) => (
+                   <li key={i} className="flex items-center gap-2 text-sm text-slate-500 font-medium">
+                     <CheckCircle2 size={16} className="text-blue-500" /> {t}
+                   </li>
+                 ))}
+              </ul>
+           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const Hero = ({ onNavigate, logoUrl }) => (
+  <section className="relative h-[85vh] flex items-center justify-center bg-slate-950 overflow-hidden">
+    <div className="absolute inset-0 opacity-20 bg-[url('https://images.unsplash.com/photo-1558494949-ef010cbdcc48?auto=format&fit=crop&q=80')] bg-cover bg-center scale-110 animate-pulse"></div>
+    <div className="relative z-10 text-center px-6 max-w-4xl">
+      <div className="inline-block p-4 bg-white/5 backdrop-blur-3xl rounded-[2rem] border border-white/10 mb-8 animate-in zoom-in duration-700">
+        <DynamicLogo url={logoUrl} className="w-20 h-20" />
+      </div>
+      <h1 className="text-5xl md:text-8xl font-black text-white mb-6 tracking-tighter leading-[0.9]">
+        Kuasai <span className="text-blue-500">Teknologi</span> <br/> Masa Depan.
+      </h1>
+      <p className="text-slate-400 max-w-xl mx-auto mb-10 text-lg leading-relaxed">
+        Pusat unggulan kompetensi Teknik Jaringan Komputer dan Telekomunikasi SMKS Pustek Mitra Tigaraksa.
+      </p>
+      <div className="flex flex-wrap justify-center gap-4">
+        <button onClick={() => onNavigate('informasi')} className="px-10 py-5 bg-blue-600 text-white rounded-[2rem] font-black uppercase tracking-widest text-[10px] shadow-2xl shadow-blue-600/30">Lihat Update</button>
+        <button onClick={() => onNavigate('kurikulum')} className="px-10 py-5 bg-white/5 text-white border border-white/10 rounded-[2rem] font-black uppercase tracking-widest text-[10px] backdrop-blur-md">Program Keahlian</button>
+      </div>
+    </div>
+  </section>
+);
+
+const NewsSection = ({ news }) => (
+  <div className="py-24 px-6 max-w-7xl mx-auto">
+    <div className="flex flex-col md:flex-row justify-between items-end mb-16 gap-4">
+      <div className="max-w-xl">
+        <span className="text-blue-600 text-[10px] font-black uppercase tracking-[0.3em] mb-4 block">Update & Pengumuman</span>
+        <h2 className="text-5xl font-black tracking-tighter text-slate-900 leading-none">Informasi <br/> <span className="text-blue-600 italic">Terbaru.</span></h2>
+      </div>
+    </div>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+      {(news || INITIAL_NEWS).map(item => (
+        <div key={item.id} className="group bg-white rounded-[3rem] overflow-hidden border border-slate-100 hover:shadow-2xl transition-all duration-500 flex flex-col">
+          <div className="relative aspect-[16/10] overflow-hidden bg-slate-50">
+            <img src={item.url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt={item.title} />
+            <div className="absolute top-6 left-6 bg-white/90 backdrop-blur px-4 py-2 rounded-2xl text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-2 shadow-sm">
+              <Calendar size={12}/> {item.date}
+            </div>
+          </div>
+          <div className="p-8 flex-1 flex flex-col">
+            <h3 className="text-2xl font-black text-slate-900 leading-tight mb-4 group-hover:text-blue-600 transition-colors">{item.title}</h3>
+            <p className="text-slate-500 text-sm leading-relaxed font-medium mb-8 line-clamp-3">{item.desc}</p>
+            <div className="mt-auto pt-6 border-t border-slate-50 flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Detail Info</span>
+              <div className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center text-slate-900 group-hover:bg-blue-600 group-hover:text-white transition-all transform group-hover:translate-x-1">
+                <ChevronRight size={18} />
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const Curriculum = ({ curriculum, onSelectSkill }) => (
+  <div className="py-32 px-6 max-w-7xl mx-auto">
+    <div className="flex flex-col items-center text-center mb-24">
+      <div className="px-4 py-1 bg-blue-50 text-blue-600 text-[10px] font-black uppercase tracking-[0.4em] rounded-full mb-6">Expertise Focus</div>
+      <h2 className="text-5xl md:text-7xl font-black tracking-tighter text-slate-900 leading-[0.9]">Program <br/> <span className="text-blue-600 italic">Unggulan.</span></h2>
+      <p className="text-slate-400 font-medium max-w-lg mt-8 text-lg">Mempersiapkan tenaga ahli IT dengan kurikulum yang selaras dengan kebutuhan industri global.</p>
+    </div>
+    
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+      {(curriculum || INITIAL_CURRICULUM).map((item, i) => (
+        <div 
+          key={item.id} 
+          onClick={() => onSelectSkill(item)}
+          className="relative p-10 bg-white border border-slate-100 rounded-[3.5rem] hover:shadow-[0_40px_80px_-20px_rgba(0,0,0,0.08)] transition-all duration-500 group flex flex-col overflow-hidden cursor-pointer active:scale-95"
+        >
+          {/* Decorative Background Blob */}
+          <div className="absolute -top-20 -right-20 w-40 h-40 bg-blue-50/50 rounded-full blur-3xl group-hover:bg-blue-100/50 transition-colors"></div>
+          
+          <div className="relative z-10 w-16 h-16 bg-slate-50 text-blue-600 rounded-[2rem] flex items-center justify-center mb-10 shadow-sm border border-white group-hover:bg-blue-600 group-hover:text-white group-hover:scale-110 transition-all duration-500">
+            <RenderIcon type={item.iconType} size={28} />
+          </div>
+          
+          <div className="relative z-10">
+            <h3 className="text-2xl font-black mb-4 text-slate-900 tracking-tight">{item.title}</h3>
+            <div className="w-10 h-1 bg-blue-600/10 mb-6 group-hover:w-full transition-all duration-500"></div>
+            <p className="text-slate-500 text-sm font-medium leading-relaxed">{item.desc}</p>
+          </div>
+          
+          <div className="mt-10 pt-8 border-t border-slate-50 relative z-10">
+            <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest group-hover:text-blue-600 transition-colors">
+              Core Competency <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const Gallery = ({ gallery }) => {
+  const getSizeClass = (size) => {
+    switch(size) {
+      case 'large': return 'md:col-span-2 md:row-span-2 aspect-square';
+      case 'tall': return 'md:row-span-2 aspect-[9/16]';
+      case 'wide': return 'md:col-span-2 aspect-[16/9]';
+      default: return 'aspect-square';
+    }
+  };
+
+  return (
+    <div className="py-24 px-6 max-w-7xl mx-auto">
+      <div className="flex flex-col md:flex-row justify-between items-baseline mb-16">
+        <h2 className="text-5xl font-black tracking-tighter text-slate-900">Momen <span className="text-blue-600 underline">Kegiatan.</span></h2>
+        <p className="text-slate-400 font-bold uppercase text-[10px] tracking-[0.3em]">Arsip Visual TKJ Pustek Mitra</p>
+      </div>
+      
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 auto-rows-min">
+        {(gallery || INITIAL_GALLERY).map((p, idx) => (
+          <div 
+            key={p.id} 
+            className={`group relative overflow-hidden rounded-[2rem] bg-slate-100 shadow-sm transition-all duration-500 hover:shadow-2xl hover:z-10 ${getSizeClass(p.size)}`}
+          >
+            <img src={p.url} className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110" alt={p.title} />
+            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 flex flex-col justify-end p-6">
+              <div className="flex justify-between items-end gap-2">
+                <div>
+                  <h4 className="text-white font-black text-sm tracking-tight">{p.title}</h4>
+                  <p className="text-blue-400 text-[10px] font-bold uppercase mt-1">{p.date}</p>
+                </div>
+                <div className="p-2 bg-white/10 backdrop-blur rounded-xl text-white"><Maximize2 size={16} /></div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const App = () => {
+  const [page, setPage] = useState('home');
+  const [selectedSkill, setSelectedSkill] = useState(null);
+  const [config, setConfig] = useState({ 
+    gallery: INITIAL_GALLERY, 
+    news: INITIAL_NEWS, 
+    curriculum: INITIAL_CURRICULUM,
+    logoUrl: DEFAULT_LOGO 
+  });
+  const [user, setUser] = useState(null);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else { await signInAnonymously(auth); }
+      } catch (err) { console.warn(err); }
+    };
+    init();
+    return onAuthStateChanged(auth, u => setUser(u));
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const unsubscribe = onSnapshot(
+      doc(db, 'artifacts', appId, 'public', 'data', 'config', 'main'), 
+      snap => { if (snap.exists()) setConfig(prev => ({ ...prev, ...snap.data() })); },
+      err => console.error("Firestore error:", err)
+    );
+    return () => unsubscribe();
+  }, [user]);
+
+  const isAdmin = user && !user.isAnonymous && (ALLOWED_ADMINS.includes(user.email) || user.uid?.startsWith('local-admin'));
+
+  const handleNavigate = (to) => {
+    setPage(to);
+    setSelectedSkill(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleSelectSkill = (skill) => {
+    setSelectedSkill(skill);
+    setPage('skill-detail');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  return (
+    <div className="min-h-screen bg-white font-sans text-slate-900 selection:bg-blue-100 selection:text-blue-600">
+      <nav className="fixed w-full z-[500] bg-white/80 backdrop-blur-xl border-b h-20 flex items-center">
+        <div className="max-w-7xl mx-auto w-full px-6 flex justify-between items-center">
+          <div className="flex items-center gap-3 cursor-pointer group" onClick={() => handleNavigate('home')}>
+            <DynamicLogo url={config.logoUrl} className="w-10 h-10 transition-transform group-hover:rotate-12" />
+            <div className="flex flex-col">
+              <span className="font-black text-xl tracking-tighter leading-none">TKJ PUSTEK</span>
+              <span className="text-[8px] font-black text-blue-600 uppercase tracking-widest mt-0.5">Mitra Tigaraksa</span>
+            </div>
+          </div>
+          <div className="hidden md:flex items-center gap-10">
+            {['home', 'informasi', 'kurikulum', 'galeri'].map(item => (
+              <button key={item} onClick={() => handleNavigate(item)} className={`text-[10px] font-black uppercase tracking-[0.2em] transition-all hover:text-blue-600 ${page === item || (page === 'skill-detail' && item === 'kurikulum') ? 'text-blue-600' : 'text-slate-400'}`}>
+                {item === 'home' ? 'Beranda' : item === 'informasi' ? 'Informasi' : item === 'kurikulum' ? 'Keahlian' : 'Galeri'}
+              </button>
+            ))}
+            {isAdmin ? (
+              <button onClick={() => setIsAdminOpen(true)} className="px-6 py-2.5 bg-blue-600 text-white text-[10px] font-black rounded-xl uppercase tracking-widest shadow-xl shadow-blue-600/20 flex items-center gap-2 transition-all hover:-translate-y-1">
+                <Settings size={14}/> Admin
+              </button>
+            ) : (
+              <button onClick={() => setIsAuthOpen(true)} className="px-6 py-2.5 bg-slate-900 text-white text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-800 transition-all">Masuk</button>
+            )}
+          </div>
+        </div>
+      </nav>
+
+      <main className="pt-20">
+        {page === 'home' && (
+          <>
+            <Hero onNavigate={handleNavigate} logoUrl={config.logoUrl} />
+            <NewsSection news={config.news} />
+            <section className="bg-slate-50">
+               <Curriculum curriculum={config.curriculum} onSelectSkill={handleSelectSkill} />
+            </section>
+          </>
+        )}
+        {page === 'informasi' && <NewsSection news={config.news} />}
+        {page === 'kurikulum' && <Curriculum curriculum={config.curriculum} onSelectSkill={handleSelectSkill} />}
+        {page === 'galeri' && <Gallery gallery={config.gallery} />}
+        {page === 'skill-detail' && selectedSkill && (
+           <SkillDetail skill={selectedSkill} onBack={() => handleNavigate('kurikulum')} />
+        )}
+      </main>
+
+      <section className="bg-slate-950 py-32 px-6 border-t border-white/5">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-24 items-center">
+          <div>
+            <h2 className="text-5xl font-black mb-8 tracking-tighter text-white">Hubungi <span className="text-blue-500">Kami.</span></h2>
+            <div className="space-y-6">
+              <div className="flex items-center gap-6 p-8 bg-white/5 rounded-[2.5rem] border border-white/5 group hover:bg-white/10 transition-all">
+                <div className="w-14 h-14 bg-blue-600 text-white rounded-2xl flex items-center justify-center"><MapPin size={28} /></div>
+                <div><p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Alamat</p><p className="text-lg font-bold text-white leading-tight">Jl. Aria Jaya Santika No.99, Tigaraksa, Tangerang</p></div>
+              </div>
+              <div className="grid grid-cols-2 gap-6">
+                <a href="https://wa.me/628999759801" target="_blank" className="p-8 bg-white/5 rounded-[2.5rem] border border-white/5 flex flex-col items-center text-center group hover:bg-green-600/10 transition-all">
+                  <MessageCircle className="text-green-500 mb-4" size={32} />
+                  <p className="text-white font-black text-lg">WhatsApp</p>
+                </a>
+                <a href="https://instagram.com/tkj_pustekmitra" target="_blank" className="p-8 bg-white/5 rounded-[2.5rem] border border-white/5 flex flex-col items-center text-center group hover:bg-pink-600/10 transition-all">
+                  <Instagram className="text-pink-500 mb-4" size={32} />
+                  <p className="text-white font-black text-lg">Instagram</p>
+                </a>
+              </div>
+            </div>
+          </div>
+          <div className="rounded-[3rem] overflow-hidden border-8 border-white/5 shadow-2xl h-[500px] relative">
+            <iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3966.309485891395!2d106.471677314769!3d-6.222858995495444!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x2e42008f1b62153b%3A0x9f1a216c5b96769e!2sSMK%20PUSTEK%20MITRA%20TIGARAKSA!5e0!3m2!1sid!2sid!4v1700000000000!5m2!1sid!2sid" width="100%" height="100%" style={{ border: 0 }} allowFullScreen="" loading="lazy"></iframe>
+          </div>
+        </div>
+      </section>
+
+      <footer className="bg-slate-950 py-12 px-6 text-center border-t border-white/5">
+        <p className="text-[10px] font-black text-slate-600 uppercase tracking-[0.5em]">SMKS PUSTEK MITRA &copy; 2024 — TKJ CENTER</p>
+      </footer>
+
+      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} onAuthSuccess={u => { setUser(u); setIsAdminOpen(true); }} />
+      <AdminPanel isOpen={isAdminOpen} onClose={() => setIsAdminOpen(false)} config={config} setConfig={setConfig} user={user} />
+    </div>
+  );
+};
+
+export default App;
